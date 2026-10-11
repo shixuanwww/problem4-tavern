@@ -21,11 +21,12 @@
 | 10 | [/llm 代理与 CORS](10-llm-proxy-cors.md) | `vite.config.ts` + `scripts/static-proxy.mjs` | 浏览器不直连第三方 API |
 | 11 | [token 估算与 80% 提醒](11-tokens-usage.md) | `core/tokens.ts` + `ui/UsageBar.tsx` | 提醒条按实时装配值精确比较；快照负责事后复核 |
 | 12 | [等级 1 的四条硬要求](12-l1-message-rules.md) | `core/messaging.ts` + `store.tsx` + `repo.ts` | 重试不重插 / 切会话不串 / 刷新必标中断：判定抽成纯函数才测得了 |
+| 13 | [**交付前验收 checklist**](13-delivery-checklist.md) | 全仓 | 交付/演示前照着走一遍：真实对话流式取证、四条硬要求手验、还差哪几张截图 |
 
 ## 开场先讲的四句话（30 秒版）
 
 1. **纯函数内核，UI 只是壳**：世界书激活、上下文装配、面板解析、V2 转换、等级 1 的消息生命周期规则都在 `src/core/`，
-   **不依赖 DOM 和 React**，所以能用 `node --test` 直接跑单测（77 个用例全绿）。
+   **不依赖 DOM 和 React**，所以能用 `node --test` 直接跑单测（83 个用例全绿）。
 2. **三个操作是三种机制**：`uiHidden` 只影响渲染、`excluded` 只影响装配、删除是真删 —— 不是一个开关的三种叫法。
 3. **每条"发送了什么"都可回放**：每次发送冻结一条 `RequestSnapshot`（含每部分来源 + 命中证据 + 未发送原因），
    冻结之后任何编辑都不改写它。
