@@ -20,11 +20,12 @@
 | 09 | [状态与流式生成](09-state-streaming.md) | `state/actions.ts` + `state/store.tsx` | 生成中切会话、配置快照、中断修复 |
 | 10 | [/llm 代理与 CORS](10-llm-proxy-cors.md) | `vite.config.ts` + `scripts/static-proxy.mjs` | 浏览器不直连第三方 API |
 | 11 | [token 估算与 80% 提醒](11-tokens-usage.md) | `core/tokens.ts` + `ui/UsageBar.tsx` | 估算是估算，判定以快照为准 |
+| 12 | [等级 1 的四条硬要求](12-l1-message-rules.md) | `core/messaging.ts` + `store.tsx` + `repo.ts` | 重试不重插 / 切会话不串 / 刷新必标中断：判定抽成纯函数才测得了 |
 
 ## 开场先讲的四句话（30 秒版）
 
-1. **纯函数内核，UI 只是壳**：世界书激活、上下文装配、面板解析、V2 转换四块都在 `src/core/`，
-   **不依赖 DOM 和 React**，所以能用 `node --test` 直接跑单测（50 个用例全绿）。
+1. **纯函数内核，UI 只是壳**：世界书激活、上下文装配、面板解析、V2 转换、等级 1 的消息生命周期规则都在 `src/core/`，
+   **不依赖 DOM 和 React**，所以能用 `node --test` 直接跑单测（77 个用例全绿）。
 2. **三个操作是三种机制**：`uiHidden` 只影响渲染、`excluded` 只影响装配、删除是真删 —— 不是一个开关的三种叫法。
 3. **每条"发送了什么"都可回放**：每次发送冻结一条 `RequestSnapshot`（含每部分来源 + 命中证据 + 未发送原因），
    冻结之后任何编辑都不改写它。
@@ -37,6 +38,8 @@
 | "世界书关键词匹配是拼成一个大字符串再 includes 吗？" | "是，SillyTavern 就这么做" | **不是**。题面规则 2 明确要求**单条消息正文内**匹配、**不跨消息拼接**（`worldbook.ts` 的 `matchKeyword` 逐条消息独立判断） |
 | "同级优先级是按数值排吗？" | "按数字大小" | **按 id 的 ASCII 升序**：`"10" < "9"`（`'1'`=49 < `'9'`=57）。直接字符串比较即可 |
 | "把消息隐藏起来就等于没发给 AI 吧？" | "对" | **不对**。`uiHidden` **不参与任何过滤** —— 它只改渲染，装配里一个字都不少 |
+| "刷新之后有没有可能停在'生成中'？" | "刷新就丢了，重新生成吧" | **不会**。写入侧先落 `streaming`、收尾用 `finalStreamStatus()`；启动侧 `repo.repairInterrupted()` 把库里任何 `streaming` 标成 `interrupted`（保留已收到的正文） |
+| "重试会不会把用户那句话又插一遍？" | "应该不会吧" | **不会**，而且是可断言的：`planRetry()` 只丢锚点之后的 assistant，锚点的 `id`/`seq` 原样复用 ⇒ user 消息恒为 1 条、seq 不跳号（`tests/l1-behaviors.test.ts`） |
 
 ## 已知取舍（主动交代，别等被问）
 

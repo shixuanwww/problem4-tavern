@@ -71,5 +71,21 @@
 
 `tests/` 用 Node 内置 test runner（`node --experimental-strip-types --test tests/*.test.ts`），
 **不引入 `vitest`**（与 handoff §2.3 的依赖上限一致）。
-当前 **50 个用例全绿**，覆盖 PLAN §8 的 18 条验收项（世界书五条规则、装配顺序、
+当前 **77 个用例全绿**：前 50 条覆盖 PLAN §8 的 18 条验收项（世界书五条规则、装配顺序、
 `uiHidden` / `excluded` / 删除的分离、快照冻结、V2 映射与错误处理、预设校验与模板展开等）。
+
+## 6. 等级 1 的四条硬要求：判定抽成 `core/messaging.ts`（**覆盖口径的补强**）
+
+- **原状**：题面【等级 1】点名的四条"必须正确处理"里，有三条只写在 `state/store.tsx`（依赖 React hooks）
+  与 `storage/repo.ts`（依赖 `indexedDB` 全局）的函数体中 —— `node --test` **一条也覆盖不到**，
+  只剩"人工演示 + 截图"这一种证据。项目又刻意不引 `fake-indexeddb`，所以原地没法补测。
+- **实际怎么做**：把其中**纯判定**的部分抽到新模块 `src/core/messaging.ts`
+  （`planRetry` / `finalStreamStatus` / `repairStreamingMessages` / `orderedSessionMessages`），
+  `store` / `repo` 改为调用它们（行为逐行等价，只是 if/else 变成函数调用）；
+  另把 SSE 的增量解码抽成 `core/llm.ts#createSseDecoder`、把导入的 ID 重映射抽成
+  `storage/repo.ts#planImport`。新增 `tests/l1-behaviors.test.ts`（27 条）后总数 **50 → 77**。
+- **顺带修掉一个真问题**：`persistImport` 一直把随包的世界书写进库，却没有放进 `ImportResult` 的
+  返回值类型里（调用方拿不到"这次导了哪几本"）。抽 `planImport` 时被 `tsc` 抓出来，已补上
+  `worldBooks?: WorldBook[]`（**纯增量字段**，不改既有调用方行为）。
+- **为什么值得改**：这四条是题面里唯一被点名"必须正确处理"的行为，也是最可能被追问
+  "你怎么保证"的地方。现在每条都有可复跑的断言（`docs/defense/12-l1-message-rules.md` 给了答辩口径）。

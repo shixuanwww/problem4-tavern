@@ -1,6 +1,12 @@
 # 依赖与构建产物
 node_modules/
+# 🔴 dist/ 必须入库：安装期无网时靠它兜底（见 README §1）。
+#    坑：只写 `dist/` 的话，`.gitignore` 会让**新增**的哈希产物（每次构建文件名都变）被静默跳过 ——
+#    结果是"提交了 index.html，却没提交它引用的那个 js"，静态打开直接白屏。
+#    这里显式放行，避免以后再踩（历史上靠 `git add -f dist/` 绕过，靠人不靠机制）。
 dist/
+!dist/
+!dist/**
 
 # 环境变量：绝不入库（.env.local 里是真实 key）
 .env

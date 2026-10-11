@@ -70,7 +70,13 @@ npm run serve:dist     # = node scripts/static-proxy.mjs，默认 http://localho
 npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 ```
 
-**不引入 `vitest`**：`src/core/` 是纯函数内核、不依赖 DOM，Node 内置 test runner 直接就能跑（依赖上限也要求如此）。当前 **50 个用例全绿**。
+**不引入 `vitest`**：`src/core/` 是纯函数内核、不依赖 DOM，Node 内置 test runner 直接就能跑（依赖上限也要求如此）。当前 **77 个用例全绿**。
+
+> 🔴 **等级 1 的四条"必须正确处理"有专门用例**（`tests/l1-behaviors.test.ts`，27 条）：
+> 重试不重复插入用户消息、生成中切会话结果仍归属发起会话、刷新打断必标 `interrupted`、
+> 以及导入的"覆盖 / 创建副本"与流式的分块边界解析。为此把这几条的**纯判定**抽到了
+> `src/core/messaging.ts`（`store` / `repo` 行为不变）—— 原先它们只长在 React 与 IndexedDB 中间，
+> `node --test` 一条也碰不到。答辩口径见 `docs/defense/12-l1-message-rules.md`。
 
 ---
 
@@ -353,14 +359,15 @@ problem4-tavern/
 │  │  ├─ preset.ts             # 预设格式 st-lite 校验 / 序列化
 │  │  ├─ template.ts           # {{}} 模板展开
 │  │  ├─ tokens.ts             # token 估算 / 预算 / 阈值
-│  │  ├─ llm.ts                # /llm 客户端（SSE）
+│  │  ├─ messaging.ts          # 等级 1 的消息生命周期判定（重试锚点 / 中断判定与启动修复）
+│  │  ├─ llm.ts                # /llm 客户端（SSE 增量解码）
 │  │  └─ defaultCharacter.ts   # 内置默认角色卡
 │  ├─ storage/           # IndexedDB 薄封装 + 仓储（级联删除 / 导入 idMap）
 │  ├─ state/             # useReducer + Context（流式生成 / 快照冻结）
 │  ├─ ui/                # 组件（仅渲染与交互，业务逻辑都在 core/）
 │  ├─ App.tsx, main.tsx, styles.css
 │  └─ ...
-├─ tests/                # 50 个用例（Node 内置 test runner）
+├─ tests/                # 77 个用例（Node 内置 test runner；含 L1 四条硬要求的行为用例）
 ├─ samples/              # 可演示的样例数据
 ├─ docs/
 │  ├─ problem-statement.md     # 题面原文（key 已掩码）
@@ -372,4 +379,4 @@ problem4-tavern/
 └─ README.md
 ```
 
-**🔴 每个模块的《答辩问答》在 [`docs/defense/`](docs/defense/README.md)** —— 覆盖世界书引擎、上下文装配、消息三分离、快照与检查视图、panel 解析、预设、角色卡 V2、存储、状态与流式、`/llm` 代理、token 与用量，共 11 份，每份含"**① 这段在干什么 ② 关键设计决策 + 为什么 ③ 会被追问的问题与要点**"。
+**🔴 每个模块的《答辩问答》在 [`docs/defense/`](docs/defense/README.md)** —— 覆盖世界书引擎、上下文装配、消息三分离、快照与检查视图、panel 解析、预设、角色卡 V2、存储、状态与流式、`/llm` 代理、token 与用量、**等级 1 四条硬要求**，共 12 份，每份含"**① 这段在干什么 ② 关键设计决策 + 为什么 ③ 会被追问的问题与要点**"。
