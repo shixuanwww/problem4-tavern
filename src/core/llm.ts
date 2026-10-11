@@ -43,7 +43,8 @@ export async function fetchDefaults(): Promise<{ baseUrl: string; model: string 
   }
 }
 
-function pickDelta(json: unknown): string {
+/** 从一条 OpenAI 风格的响应里取出增量文本（流式的 `delta` / 非流式的 `message` / `text` 都认） */
+export function pickDelta(json: unknown): string {
   const choices = (json as { choices?: unknown }).choices;
   if (!Array.isArray(choices) || choices.length === 0) return '';
   const first = choices[0] as Record<string, unknown>;
@@ -53,6 +54,60 @@ function pickDelta(json: unknown): string {
   if (message && typeof message.content === 'string') return message.content;
   const text = first.text;
   return typeof text === 'string' ? text : '';
+}
+
+/**
+ * 从**一行** SSE 里取出增量文本。返回 `''` 表示这一行没有可用增量：
+ * 非 `data:` 行、心跳/注释行、空行、`[DONE]`、坏 JSON 一律安静跳过（绝不抛）。
+ */
+export function deltaFromSseLine(rawLine: string): string {
+  const line = rawLine.trim();
+  if (!line.startsWith('data:')) return '';
+  const payload = line.slice(5).trim();
+  if (payload === '' || payload === '[DONE]') return '';
+  try {
+    return pickDelta(JSON.parse(payload) as unknown);
+  } catch {
+    return '';
+  }
+}
+
+export interface SseDecoder {
+  /** 喂一个**任意切分**的网络分块（半个 `data:` 行也安全） */
+  push(chunk: string): void;
+  /** 流结束：处理最后一行没有换行结尾的残留 */
+  flush(): void;
+}
+
+/**
+ * 增量式 SSE 解码器。
+ *
+ * 为什么要有它：流式的正确性有一半在**分块边界**上 —— 一个 `data: {...}` 行完全可能被
+ * 切在两个网络分块里；如果按块直接 `JSON.parse`，就会偶发丢字（而且是"看起来能跑"的那种）。
+ * 这里保持 `buffer`，只处理**已经完整**的行，流结束时再 `flush()` 残留。
+ *
+ * 抽成纯函数（只依赖传入的字符串）是为了让 Node 单测能喂**任意切分**的输入做回归。
+ */
+export function createSseDecoder(onDelta: (delta: string) => void): SseDecoder {
+  let buffer = '';
+  const handle = (rawLine: string): void => {
+    const delta = deltaFromSseLine(rawLine);
+    if (delta) onDelta(delta);
+  };
+  return {
+    push(chunk: string): void {
+      buffer += chunk;
+      // SSE：以空行分隔事件；这里逐行处理 `data:` 行即可
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const rawLine of lines) handle(rawLine);
+    },
+    flush(): void {
+      const rest = buffer;
+      buffer = '';
+      if (rest.trim() !== '') handle(rest);
+    },
+  };
 }
 
 export async function streamChat(opts: StreamOptions, handlers: StreamHandlers): Promise<void> {
@@ -111,49 +166,19 @@ export async function streamChat(opts: StreamOptions, handlers: StreamHandlers):
 
   const reader = body.getReader();
   const decoder = new TextDecoder('utf-8');
-  let buffer = '';
   let full = '';
+  const sse = createSseDecoder((delta) => {
+    full += delta;
+    handlers.onDelta(delta);
+  });
 
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE：以空行分隔事件；这里逐行处理 `data:` 行即可
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '' || payload === '[DONE]') continue;
-        try {
-          const json = JSON.parse(payload) as unknown;
-          const delta = pickDelta(json);
-          if (delta) {
-            full += delta;
-            handlers.onDelta(delta);
-          }
-        } catch {
-          // 单行不是合法 JSON：忽略（有些网关会插入心跳 / 注释行）
-        }
-      }
+      sse.push(decoder.decode(value, { stream: true }));
     }
-    if (buffer.trim().startsWith('data:')) {
-      const payload = buffer.trim().slice(5).trim();
-      if (payload && payload !== '[DONE]') {
-        try {
-          const delta = pickDelta(JSON.parse(payload) as unknown);
-          if (delta) {
-            full += delta;
-            handlers.onDelta(delta);
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    sse.flush();
     handlers.onDone(full);
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;

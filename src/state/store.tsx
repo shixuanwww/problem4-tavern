@@ -19,6 +19,7 @@ import type {
   WorldBook,
 } from '../core/types.ts';
 import { buildRequest, cryptoRandomId, freezeSnapshot, partsToChat } from '../core/assembly.ts';
+import { finalStreamStatus, planRetry } from '../core/messaging.ts';
 import { fetchDefaults, streamChat } from '../core/llm.ts';
 import * as repo from '../storage/repo.ts';
 import type { BundleCheck, SessionBundle } from '../storage/repo.ts';
@@ -217,8 +218,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         controllers.current.delete(assistant.id);
       }
 
-      // 统一收尾：complete / interrupted 只在这里判定
-      const status: MessageStatus = finished && !controller.signal.aborted ? 'complete' : 'interrupted';
+      // 统一收尾：complete / interrupted 只在这里判定（规则见 core/messaging.ts）
+      const status: MessageStatus = finalStreamStatus(finished, controller.signal.aborted);
       const finalMessage: Message = { ...assistant, content: acc, status };
       await repo.saveMessage(finalMessage);
       dispatch({ type: 'message/upsert', messages: [finalMessage] });
@@ -267,27 +268,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const retryLast = useCallback(
     async (sessionId: string) => {
-      const snap = stateRef.current;
-      const ordered = snap.messages
-        .filter((m) => m.sessionId === sessionId)
-        .sort((a, b) => a.seq - b.seq);
-      let lastUserIndex = -1;
-      for (let i = ordered.length - 1; i >= 0; i -= 1) {
-        if (ordered[i]?.role === 'user') {
-          lastUserIndex = i;
-          break;
-        }
-      }
-      if (lastUserIndex < 0) return;
-      const lastUser = ordered[lastUserIndex] as Message;
+      // 锚点与要丢弃的消息由纯函数给出（可被 tests/ 直接覆盖，见 core/messaging.ts）
+      const plan = planRetry(stateRef.current.messages, sessionId);
+      if (!plan) return;
 
-      const trailing = ordered.slice(lastUserIndex + 1).map((m) => m.id);
-      if (trailing.length > 0) {
-        await repo.deleteMessages(trailing);
-        dispatch({ type: 'message/remove', ids: trailing });
+      if (plan.dropIds.length > 0) {
+        await repo.deleteMessages(plan.dropIds);
+        dispatch({ type: 'message/remove', ids: plan.dropIds });
       }
 
-      await runGeneration(sessionId, lastUser.content, lastUser.seq, []);
+      await runGeneration(sessionId, plan.anchor.content, plan.anchor.seq, []);
     },
     [runGeneration],
   );

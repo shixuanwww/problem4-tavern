@@ -9,6 +9,7 @@ import type {
   WorldBook,
 } from '../core/types.ts';
 import { cryptoRandomId } from '../core/assembly.ts';
+import { repairStreamingMessages } from '../core/messaging.ts';
 import { DEFAULT_CHARACTER } from '../core/defaultCharacter.ts';
 import {
   idbBulkPut,
@@ -82,12 +83,14 @@ export async function loadAll(): Promise<LoadedDb> {
  * 启动时的"中断修复"：刷新会打断正在生成的回复，
  * 这里把所有还停在 streaming 的消息标成 interrupted（保留已收到的部分文本），
  * 不允许永远停在"生成中"。
+ *
+ * 判定本身是纯函数（`core/messaging.ts#repairStreamingMessages`）⇒ 可被单测直接覆盖；
+ * 本函数只负责"读库 → 批量写回"。
  */
 export async function repairInterrupted(): Promise<Message[]> {
   const messages = await idbGetAll<Message>('messages');
-  const stuck = messages.filter((m) => m.status === 'streaming');
-  if (stuck.length === 0) return [];
-  const fixed = stuck.map((m) => ({ ...m, status: 'interrupted' as const }));
+  const fixed = repairStreamingMessages(messages);
+  if (fixed.length === 0) return [];
   await idbBulkPut('messages', fixed);
   return fixed;
 }
@@ -329,23 +332,34 @@ export interface ImportResult {
   messages: Message[];
   snapshots: RequestSnapshot[];
   characterCard?: CharacterCardLite;
+  /**
+   * 随包导入的世界书（副本模式下条目 ID 也已重映射）。
+   * ⚠️ 原先 `persistImport` 已经把它写进库，却没有放进返回值 —— 调用方拿不到"这次到底导了哪几本"。
+   *    这里补上（纯增量字段，不影响既有调用方）。
+   */
+  worldBooks?: WorldBook[];
   /** 本次导入因为同 ID 而重新分配的映射（旧 ID → 新 ID），供 UI 展示 */
   idMap: Record<string, string>;
 }
 
 /**
- * 落库导入结果。mode：
- *  - 'overwrite'：沿用原 ID，直接覆盖库里的同名资源
- *  - 'copy'：所有资源重新分配 ID，标题加「（副本 N）」后缀，引用一次性重写
+ * 导入的**纯计划**部分：算出这次要写哪些记录、ID 怎么映射（不碰 IndexedDB）。
  *
- * 🔴 固定顺序（先分配新 ID → 用一张 idMap 一次性重写引用 → 最后写库），
+ * mode：
+ *  - `overwrite`：沿用原 ID，直接覆盖库里的同名资源
+ *  - `copy`：所有资源重新分配 ID，标题加「（副本 N）」后缀，引用一次性重写
+ *
+ * 🔴 固定顺序（先分配新 ID → 用**同一张** `idMap` 一次性重写所有引用 → 最后才写库），
  *    绝不"先改被引用资源再补引用"，否则会留悬空 ID。
+ *
+ * 抽成纯函数是为了让 L1 的「导入同 ID 时必须区分覆盖 / 创建副本」这条要求在
+ * Node 内置 test runner 里能直接断言（见 `tests/l1-behaviors.test.ts`）。
  */
-export async function persistImport(
+export function planImport(
   bundle: SessionBundle,
   mode: 'overwrite' | 'copy',
   existingTitles: string[],
-): Promise<ImportResult> {
+): ImportResult {
   const idMap: Record<string, string> = {};
   const mapId = (oldId: string): string => {
     if (mode === 'overwrite') return oldId;
@@ -387,15 +401,24 @@ export async function persistImport(
     entries: wb.entries.map((e) => ({ ...e, id: mapId(e.id) })),
   }));
 
-  await Promise.all([
-    idbPut('sessions', session),
-    idbBulkPut('messages', messages),
-    idbBulkPut('snapshots', snapshots),
-    ...(characterCard ? [idbPut('characters', characterCard)] : []),
-    ...(worldBooks ? [idbBulkPut('worldbooks', worldBooks)] : []),
-  ]);
+  return { session, messages, snapshots, characterCard, worldBooks, idMap };
+}
 
-  return { session, messages, snapshots, characterCard, idMap };
+/** 落库：把 `planImport` 的结果写进 IndexedDB（同一次 Promise.all，无悬空引用） */
+export async function persistImport(
+  bundle: SessionBundle,
+  mode: 'overwrite' | 'copy',
+  existingTitles: string[],
+): Promise<ImportResult> {
+  const plan = planImport(bundle, mode, existingTitles);
+  await Promise.all([
+    idbPut('sessions', plan.session),
+    idbBulkPut('messages', plan.messages),
+    idbBulkPut('snapshots', plan.snapshots),
+    ...(plan.characterCard ? [idbPut('characters', plan.characterCard)] : []),
+    ...(plan.worldBooks ? [idbBulkPut('worldbooks', plan.worldBooks)] : []),
+  ]);
+  return plan;
 }
 
 export function copyTitle(title: string, existingTitles: string[]): string {
