@@ -210,11 +210,17 @@ export function importCharacterCard(raw: unknown, rawText?: string): CardImportR
           list.push(i);
           idToIndices.set(id, list);
 
-          // 记录本次实际出现的、会被忽略的运行规则
-          if (isObj(e.extensions)) {
-            for (const r of IGNORED_RULES) {
-              if (r in e.extensions) ignoredPresent.add(r);
-            }
+          /**
+           * 记录本次实际出现的、会被忽略的运行规则。
+           *
+           * 🔴 V2 的 `character_book.entries[]` 里这些字段【按规范是条目顶层字段】
+           *    （`position` / `selective` / `secondary_keys` / `case_sensitive` …），
+           *    SillyTavern 导出时才会额外镜像一份进 `extensions`。所以两处都要看：
+           *    只看 `extensions` 会漏报"手写卡只写顶层字段"的情况，预览就不再如实。
+           */
+          for (const r of IGNORED_RULES) {
+            if (isObj(e.extensions) && r in e.extensions) ignoredPresent.add(r);
+            else if (r in e && e[r] !== undefined) ignoredPresent.add(r);
           }
           if (typeof e.extensions === 'object' && e.extensions !== null) ignoredPresent.add('extensions.*');
         });

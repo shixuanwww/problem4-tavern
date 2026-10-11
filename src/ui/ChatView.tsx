@@ -131,6 +131,19 @@ export function ChatView({ draft, onDraftChange, onChoose, onOpenPanel }: ChatVi
     onChoose(message.sessionId, text);
   };
 
+  /**
+   * 上下文快满时的"可处理的消息入口"（题面要求提醒条必须带入口）。
+   * 直接替用户把**较早的消息**选中（最近 2 条，通常是一问一答，保持选中之外），
+   * 并把隐藏消息一起显示出来，用户接着点工具栏的「批量不进上下文」就能一步排除。
+   */
+  const handleProcessOldMessages = () => {
+    const lastSeq = visible[visible.length - 1]?.seq ?? 0;
+    const targets = messages.filter((m) => lastSeq - m.seq >= 2);
+    setShowHidden(true);
+    setSelected(new Set(targets.map((m) => m.id)));
+    document.querySelector('.chat-list')?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <section className="chat">
       <div className="chat-top">
@@ -209,9 +222,7 @@ export function ChatView({ draft, onDraftChange, onChoose, onOpenPanel }: ChatVi
             used={preview.totalTokens}
             limit={session.settings.contextLimit}
             warnPct={session.settings.contextWarnPct}
-            onOpenMessages={() => {
-              document.querySelector('.chat-list')?.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onOpenMessages={handleProcessOldMessages}
           />
         ) : null}
 

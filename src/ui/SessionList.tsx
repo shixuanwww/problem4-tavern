@@ -162,13 +162,46 @@ export function SessionList() {
         {sessions.length === 0 ? <li className="session-empty">还没有会话</li> : null}
       </ul>
 
-      {conflict?.bundle ? (
+      {conflict?.bundle && conflict.conflicts ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="导入冲突">
           <div className="modal">
-            <h2>已有同 ID 的会话</h2>
+            <h2>本地已有同 ID 的资源</h2>
             <p>
-              本地已存在 ID 为 <code>{conflict.bundle.session.id}</code> 的会话。请选择处理方式：
+              导入包里有 {conflict.conflicts.total} 处 ID 与本地资源相同。
+              <strong>覆盖</strong>会用导入包整体替换它们（本地多出来的消息会被丢弃）；
+              <strong>创建副本</strong>会给所有资源重新分配 ID，互不影响。请选择处理方式：
             </p>
+            <ul className="conflict-list">
+              {conflict.conflicts.sessionIds.length > 0 ? (
+                <li>
+                  会话 ID：{conflict.conflicts.sessionIds.map((id) => <code key={id}>{id}</code>)}
+                </li>
+              ) : null}
+              {conflict.conflicts.messageIds.length > 0 ? (
+                <li>
+                  消息 ID：{conflict.conflicts.messageIds.length} 条同 ID（
+                  {conflict.conflicts.messageIds.slice(0, 3).map((id) => (
+                    <code key={id}>{id.slice(0, 8)}</code>
+                  ))}
+                  {conflict.conflicts.messageIds.length > 3 ? ' …' : ''}）
+                </li>
+              ) : null}
+              {conflict.conflicts.snapshotIds.length > 0 ? (
+                <li>请求快照 ID：{conflict.conflicts.snapshotIds.length} 条同 ID</li>
+              ) : null}
+              {conflict.conflicts.worldBookIds.length > 0 ? (
+                <li>
+                  世界书 ID：
+                  {conflict.conflicts.worldBookIds.map((id) => <code key={id}>{id.slice(0, 8)}</code>)}
+                </li>
+              ) : null}
+              {conflict.conflicts.characterIds.length > 0 ? (
+                <li>
+                  角色卡 ID：
+                  {conflict.conflicts.characterIds.map((id) => <code key={id}>{id.slice(0, 8)}</code>)}
+                </li>
+              ) : null}
+            </ul>
             <div className="modal-actions">
               <button type="button" className="btn btn-primary" onClick={() => void resolveConflict('overwrite')}>
                 覆盖

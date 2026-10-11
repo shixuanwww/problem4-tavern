@@ -82,6 +82,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /** 正在进行的生成：assistant 消息 id → AbortController */
   const controllers = useRef(new Map<string, AbortController>());
+  /**
+   * 已被删除的会话。删除会话时级联删消息是异步的，而正在跑的 `runGeneration` 的收尾/节流写库
+   * 还在后面 —— 没有这个集合，它会把刚删掉的消息重新写回库里（留下孤儿记录）。
+   */
+  const removedSessions = useRef(new Set<string>());
+  /**
+   * 指向 `saveAppSettings` 的 ref。
+   * 为什么用 ref 而不是直接引用：`activateSession` / `removeSession` 声明在 `saveAppSettings`
+   * **之前**，直接写进依赖数组会在渲染期触发 TDZ（块级作用域变量未初始化）。
+   */
+  const persistSettings = useRef<(settings: AppSettings) => Promise<void>>(async () => {});
 
   // ------------------------------------------------------------ 启动加载
   useEffect(() => {
@@ -91,7 +102,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // 先修复被刷新打断的生成（不能永远停在 streaming）
         const repaired = await repo.repairInterrupted();
         const db = await repo.loadAll();
-        await repo.ensureDefaultCharacter();
+        // ensureDefaultCharacter 只写库、不返回给内存镜像 ⇒ 这里手动并进 db，
+        // 否则"全新浏览器首次启动"时 state.characters 为空，装配找不到角色卡。
+        const defaultCharacter = await repo.ensureDefaultCharacter();
+        if (!db.characters.some((c) => c.id === defaultCharacter.id)) {
+          db.characters = [...db.characters, defaultCharacter];
+        }
         if (cancelled) return;
 
         if (repaired.length > 0) {
@@ -99,7 +115,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           for (const m of repaired) map.set(m.id, m);
           db.messages = Array.from(map.values());
         }
-        dispatch({ type: 'hydrate', db });
+        // 刷新后恢复到"上次打开的那个会话"（它已被删掉时由 reducer 回落到最近更新的会话）
+        dispatch({ type: 'hydrate', db, preferredActiveId: db.settings.lastActiveSessionId ?? null });
 
         // 从 dev server / static-proxy 取回 .env 里的默认 baseUrl / model 预填设置面板（不含 key）
         const defaults = await fetchDefaults();
@@ -137,6 +154,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const config: AppSettings = { ...snap.settings };
       const sessionSnapshot: Session = { ...session, settings: { ...session.settings } };
 
+      /**
+       * 注意：这里可能把同一条 user 消息传两遍（`snap.messages` 里已有一份 + `extraMessages` 一份）。
+       * `buildRequest` 入口会按 id 去重并按 `pendingSeq` 剔除，因此不会重复装配、也不会占两格扫描窗口。
+       */
       const messages = [...snap.messages.filter((m) => m.sessionId === sessionId), ...extraMessages];
       const worldBooks = snap.worldBooks.filter((wb) => sessionSnapshot.worldBookIds.includes(wb.id));
       const preset = snap.presets.find((p) => p.id === sessionSnapshot.presetId);
@@ -183,8 +204,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let finished = false;
       let errorText: string | null = null;
 
-      const flush = (status: MessageStatus) =>
-        repo.saveMessage({ ...assistant, content: acc, status });
+      /**
+       * 落库 assistant 消息。
+       * 🔴 用内存里**最新的那条**做基底、只覆盖 `content` / `status` —— 否则用户在生成期间
+       *    对这条消息做的「隐藏 / 不进上下文」会被收尾写覆盖回原值。
+       * 🔴 会话已被删除时直接跳过：级联删除是异步的，写回去只会在库里留孤儿记录。
+       */
+      const flush = (status: MessageStatus): Promise<void> => {
+        if (removedSessions.current.has(sessionId)) return Promise.resolve();
+        const current = stateRef.current.messages.find((m) => m.id === assistant.id);
+        return repo.saveMessage({ ...(current ?? assistant), content: acc, status });
+      };
 
       try {
         await streamChat(
@@ -218,9 +248,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         controllers.current.delete(assistant.id);
       }
 
+      if (removedSessions.current.has(sessionId)) return;
+
       // 统一收尾：complete / interrupted 只在这里判定（规则见 core/messaging.ts）
       const status: MessageStatus = finalStreamStatus(finished, controller.signal.aborted);
-      const finalMessage: Message = { ...assistant, content: acc, status };
+      const latest = stateRef.current.messages.find((m) => m.id === assistant.id);
+      const finalMessage: Message = { ...(latest ?? assistant), content: acc, status };
       await repo.saveMessage(finalMessage);
       dispatch({ type: 'message/upsert', messages: [finalMessage] });
       dispatch({ type: 'generating/set', sessionId, messageId: null });
@@ -294,9 +327,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       stateRef.current.characters.find((c) => c.id === characterId) ??
       stateRef.current.characters.find((c) => c.id === 'char-default');
     const created = await repo.createSession({ character: card });
+    // 角色卡本身也进内存镜像：全新浏览器首次启动时 characters 可能还是空的
+    // （ensureDefaultCharacter 只写库），不补这一步装配就找不到角色卡。
+    removedSessions.current.delete(created.session.id);
+    dispatch({ type: 'character/upsert', characters: [created.character] });
     dispatch({ type: 'session/upsert', sessions: [created.session] });
     if (created.opening) dispatch({ type: 'message/upsert', messages: [created.opening] });
     dispatch({ type: 'session/activate', id: created.session.id });
+    void persistSettings.current({ ...stateRef.current.settings, lastActiveSessionId: created.session.id });
   }, []);
 
   const renameSession = useCallback(async (id: string, title: string) => {
@@ -308,15 +346,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeSession = useCallback(async (id: string) => {
+    // 先标记"这个会话没了"：正在跑的生成收尾时据此跳过写库（否则会写回刚删掉的消息）
+    removedSessions.current.add(id);
     // 会话正在生成 → 先掐掉
     const generatingId = stateRef.current.generating[id];
     if (generatingId) controllers.current.get(generatingId)?.abort();
     await repo.deleteSessionCascade(id);
     dispatch({ type: 'session/remove', id });
+    if (stateRef.current.settings.lastActiveSessionId === id) {
+      await persistSettings.current({ ...stateRef.current.settings, lastActiveSessionId: undefined });
+    }
   }, []);
 
+  /**
+   * 切换会话。除了 dispatch，还把"当前会话"落到 settings（IndexedDB）——
+   * 刷新后才能真正恢复到上次停留的会话（hydrate 用 `lastActiveSessionId` 作 preferredActiveId）。
+   */
   const activateSession = useCallback((id: string | null) => {
     dispatch({ type: 'session/activate', id });
+    const settings = stateRef.current.settings;
+    if ((settings.lastActiveSessionId ?? null) === (id ?? null)) return;
+    void persistSettings.current({ ...settings, lastActiveSessionId: id ?? undefined });
   }, []);
 
   // ------------------------------------------------------------ 消息三分离
@@ -431,6 +481,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await repo.saveSettings(settings);
     dispatch({ type: 'settings/set', settings });
   }, []);
+  // 让声明在前面的 activateSession / removeSession 也能落到这份实现（见 persistSettings 的注释）
+  persistSettings.current = saveAppSettings;
 
   // ------------------------------------------------------------ 导出 / 导入
 
@@ -464,7 +516,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       return { ok: false, error: `JSON 语法错误：${(error as Error).message}` };
     }
-    return repo.checkBundle(raw, stateRef.current.sessions.map((s) => s.id));
+    // 五类资源的同 ID 冲突都要报（覆盖模式下它们都会被替换，只在会话 ID 上判断会漏）
+    const snap = stateRef.current;
+    return repo.checkBundle(raw, snap.sessions.map((s) => s.id), {
+      messages: snap.messages.map((m) => m.id),
+      snapshots: snap.snapshots.map((s) => s.id),
+      worldBooks: snap.worldBooks.map((w) => w.id),
+      characters: snap.characters.map((c) => c.id),
+    });
   }, []);
 
   const applyImport = useCallback(async (bundle: SessionBundle, mode: 'overwrite' | 'copy') => {
@@ -473,11 +532,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mode,
       stateRef.current.sessions.map((s) => s.title),
     );
-    dispatch({ type: 'session/upsert', sessions: [result.session] });
-    if (result.messages.length > 0) dispatch({ type: 'message/upsert', messages: result.messages });
-    if (result.snapshots.length > 0) dispatch({ type: 'snapshot/upsert', snapshots: result.snapshots });
+    // 导入的会话 ID 可能刚好是刚被删掉的那个 ⇒ 清掉"已删除"标记，别把后续生成挡掉
+    removedSessions.current.delete(result.session.id);
+    if (mode === 'overwrite') {
+      // 覆盖 = 整体替换（与 repo.persistImport 的语义一致），不能只 upsert 让新旧消息混在一起
+      dispatch({
+        type: 'session/replace',
+        session: result.session,
+        messages: result.messages,
+        snapshots: result.snapshots,
+      });
+    } else {
+      dispatch({ type: 'session/upsert', sessions: [result.session] });
+      if (result.messages.length > 0) dispatch({ type: 'message/upsert', messages: result.messages });
+      if (result.snapshots.length > 0) dispatch({ type: 'snapshot/upsert', snapshots: result.snapshots });
+    }
     if (result.characterCard) dispatch({ type: 'character/upsert', characters: [result.characterCard] });
+    // 🔴 随包导入的世界书必须进内存镜像，否则会话引用了它们却不生效（刷新后才出现）
+    if (result.worldBooks && result.worldBooks.length > 0) {
+      dispatch({ type: 'worldbook/upsert', worldBooks: result.worldBooks });
+    }
     dispatch({ type: 'session/activate', id: result.session.id });
+    void persistSettings.current({ ...stateRef.current.settings, lastActiveSessionId: result.session.id });
   }, []);
 
   const actions = useMemo<AppActions>(

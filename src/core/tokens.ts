@@ -38,7 +38,11 @@ export function clampScanDepth(n: number): number {
   return v;
 }
 
-/** 是否达到"上下文快满"提醒阈值（整数百分比比较，不存在 0.8 这种小数口径）。 */
+/**
+ * 是否达到"上下文快满"提醒阈值。
+ * 🔴 用**精确比较**、不走 `Math.round`：`used=795 / limit=1000` 显示成 80%，
+ *    但判据仍是 79.5% ⇒ 不告警。显示值（四舍五入）与判据（精确）刻意分开。
+ */
 export function isOverWarnThreshold(used: number, limit: number, warnPct: number): boolean {
   if (!Number.isFinite(limit) || limit <= 0) return false;
   return (used * 100) / limit >= warnPct;

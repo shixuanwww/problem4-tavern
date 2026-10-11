@@ -52,7 +52,8 @@ export function MessageBubble({
     .join(' ');
 
   return (
-    <article className={classes} data-message-id={message.id}>
+    // 🔴 `id` 供"检查视图 → 命中消息"的锚点跳转（`#msg-<id>`）；`data-message-id` 供脚本/测试定位
+    <article className={classes} id={`msg-${message.id}`} data-message-id={message.id}>
       <header className="bubble-head">
         <label className="bubble-select" title="选中以批量操作">
           <input

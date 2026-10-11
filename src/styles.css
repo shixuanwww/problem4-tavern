@@ -328,6 +328,12 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .modal h2 { margin: 0; font-size: 16px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal p { margin: 0; color: var(--text-dim); font-size: 13px; }
+.conflict-list {
+  margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;
+  font-size: 13px; color: var(--text-dim); max-height: 30vh; overflow: auto;
+}
+.conflict-list code { margin-right: 4px; }
 
 code { font-family: var(--mono); font-size: 12px; background: var(--bg-4); padding: 1px 5px; border-radius: 4px; }
 

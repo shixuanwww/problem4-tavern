@@ -48,6 +48,12 @@ export type Action =
   | { type: 'hydrate'; db: LoadedDb; preferredActiveId?: string | null }
   | { type: 'load/error'; message: string }
   | { type: 'session/upsert'; sessions: Session[] }
+  /**
+   * 覆盖导入专用：把某个会话连同它的消息与快照**整体替换**成导入包里的内容。
+   * 与 `session/upsert` 的区别是它会先丢掉该 sessionId 下的旧 messages / snapshots，
+   * 与 `repo.persistImport` 的"覆盖 = 替换"语义保持一致（否则内存里会留下旧消息）。
+   */
+  | { type: 'session/replace'; session: Session; messages: Message[]; snapshots: RequestSnapshot[] }
   | { type: 'session/remove'; id: string }
   | { type: 'session/activate'; id: string | null }
   | { type: 'message/upsert'; messages: Message[] }
@@ -101,6 +107,19 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'session/upsert':
       return { ...state, sessions: sortSessions(upsertById(state.sessions, action.sessions)) };
+
+    case 'session/replace': {
+      const sessionId = action.session.id;
+      return {
+        ...state,
+        sessions: sortSessions(upsertById(state.sessions, [action.session])),
+        messages: [...state.messages.filter((m) => m.sessionId !== sessionId), ...action.messages],
+        snapshots: [
+          ...state.snapshots.filter((s) => s.sessionId !== sessionId),
+          ...action.snapshots,
+        ],
+      };
+    }
 
     case 'session/remove': {
       const sessions = state.sessions.filter((s) => s.id !== action.id);

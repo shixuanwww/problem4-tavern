@@ -72,6 +72,17 @@ export function buildRequest(input: BuildRequestInput): BuildRequestResult {
   const renderModule = (m: PresetModule): string =>
     m.template ? expandTemplate(m.content, vars).text : m.content;
 
+  /**
+   * 🔴 装配入口先做两件归一化，保证"预览"与"真实发送"看到的是同一份消息集合：
+   *  1) **按 id 去重**：调用方可能把同一条消息既从 state.messages 又从 extraMessages 传进来
+   *     （见 state/store.tsx 的 runGeneration）。同 id 只保留一份，否则它会占掉两格扫描窗口。
+   *  2) **剔除本次待发送的那条 user 消息**：它已经入库（seq === pendingSeq），但语义上属于
+   *     "本次待发送"，只在 pending 部分出现一次；**也不再参与世界书扫描集的历史部分** ——
+   *     否则它会挤掉一格扫描窗口，导致"预览里激活、真正发送时不激活"的静默不一致。
+   */
+  const ordered = [...new Map(messages.map((m) => [m.id, m])).values()].sort((a, b) => a.seq - b.seq);
+  const contextMessages = ordered.filter((m) => m.seq !== input.pendingSeq);
+
   // ---- 1. character -------------------------------------------------------
   if (character) {
     const content = character.description
@@ -114,7 +125,7 @@ export function buildRequest(input: BuildRequestInput): BuildRequestResult {
 
   const wb = activateWorldBook({
     entries: flatEntries,
-    messages,
+    messages: contextMessages,
     pendingUserText: input.pendingUserText,
     scanDepth: session.settings.scanDepth,
     budgetTokens: worldBookBudget(session.settings.contextLimit, session.settings.worldBookBudgetPct),
@@ -142,12 +153,9 @@ export function buildRequest(input: BuildRequestInput): BuildRequestResult {
   }
 
   // ---- 4. history ---------------------------------------------------------
-  const ordered = [...messages].sort((a, b) => a.seq - b.seq);
-  for (const msg of ordered) {
+  for (const msg of contextMessages) {
     if (msg.excluded) continue;
     if (msg.status !== 'complete') continue;
-    // 🔴 本次待发送的那条 user 消息不入 history —— 它只在 pending 出现一次
-    if (msg.seq === input.pendingSeq) continue;
     push({
       kind: 'history',
       sourceId: msg.id,

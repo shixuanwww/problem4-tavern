@@ -226,6 +226,11 @@ export interface AppSettings {
   model: string;
   apiKey: string;
   stream: boolean;
+  /**
+   * 上次打开的会话 id（刷新后据此恢复"停留在哪个会话"）。
+   * 会话被删除时不指向任何存在的会话 ⇒ hydrate 时自动回落"最近更新的会话"。
+   */
+  lastActiveSessionId?: string;
 }
 
 export const STORE_NAMES = [

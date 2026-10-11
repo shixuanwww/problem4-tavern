@@ -73,7 +73,14 @@ export async function loadAll(): Promise<LoadedDb> {
 
   const stored = settingsRows[0];
   const settings: AppSettings = stored
-    ? { baseUrl: stored.baseUrl ?? '', model: stored.model ?? '', apiKey: stored.apiKey ?? '', stream: stored.stream !== false }
+    ? {
+        baseUrl: stored.baseUrl ?? '',
+        model: stored.model ?? '',
+        apiKey: stored.apiKey ?? '',
+        stream: stored.stream !== false,
+        lastActiveSessionId:
+          typeof stored.lastActiveSessionId === 'string' ? stored.lastActiveSessionId : undefined,
+      }
     : { ...DEFAULT_APP_SETTINGS };
 
   return { sessions, messages, worldBooks, presets, characters, snapshots, settings };
@@ -180,6 +187,12 @@ export async function deleteWorldBookCascade(worldBookId: string): Promise<Sessi
 
 export interface CreateSessionResult {
   session: Session;
+  /**
+   * 本次实际绑定并落库的角色卡（调用方 `input.character ?? DEFAULT_CHARACTER`）。
+   * 返回它是为了让 state 层能把这张卡一并放进内存镜像 —— 否则"全新浏览器首次启动"时，
+   * `characters` 还是空的，装配就找不到角色卡（预览里没有角色卡部分）。
+   */
+  character: CharacterCardLite;
   /** 开场白消息（来自绑定的角色卡 firstMes），没有则不插 */
   opening: Message | null;
 }
@@ -228,7 +241,7 @@ export async function createSession(input: {
     ...(opening ? [idbPut('messages', opening)] : []),
   ]);
 
-  return { session, opening };
+  return { session, character, opening };
 }
 
 export async function ensureDefaultCharacter(): Promise<CharacterCardLite> {
@@ -281,15 +294,53 @@ export function buildSessionBundle(
   };
 }
 
+/** 除会话之外、同样会因为同 ID 而被覆盖的资源（题面："与已有资源同 ID"）。 */
+export interface ExistingIdSets {
+  messages?: string[];
+  snapshots?: string[];
+  worldBooks?: string[];
+  characters?: string[];
+}
+
+export interface BundleConflicts {
+  /** 同 ID 的会话（为空表示不会覆盖已有会话） */
+  sessionIds: string[];
+  messageIds: string[];
+  snapshotIds: string[];
+  worldBookIds: string[];
+  characterIds: string[];
+  /** 命中的资源总数（用于 UI 提示） */
+  total: number;
+}
+
 export interface BundleCheck {
   ok: boolean;
   error?: string;
   bundle?: SessionBundle;
-  /** 目标库里是否已存在同 ID 的会话（存在则 UI 要弹"覆盖 / 创建副本 / 取消"） */
+  /** 是否与目标库里已有资源同 ID（存在则 UI 要弹"覆盖 / 创建副本 / 取消"） */
   idConflict?: boolean;
+  /** 同 ID 冲突明细（覆盖模式下这些资源都会被替换） */
+  conflicts?: BundleConflicts;
 }
 
-export function checkBundle(raw: unknown, existingSessionIds: string[]): BundleCheck {
+function intersect(ids: string[], existing?: string[]): string[] {
+  if (!existing || existing.length === 0) return [];
+  const set = new Set(existing);
+  return [...new Set(ids)].filter((id) => set.has(id));
+}
+
+/**
+ * 校验导入包，并算出"哪些资源与本地同 ID"。
+ *
+ * 🔴 题面要求"与已有资源同 ID 时的覆盖、创建副本或取消" —— 只看会话 ID 是不够的：
+ *    覆盖模式下 `planImport` 会沿用原 ID，同 ID 的角色卡 / 世界书条目 / 快照同样会被替换。
+ *    所以这里把五类资源都算出来，UI 据此提示（会话 ID 决定标题后缀与整体语义）。
+ */
+export function checkBundle(
+  raw: unknown,
+  existingSessionIds: string[],
+  existing?: ExistingIdSets,
+): BundleCheck {
   if (typeof raw !== 'object' || raw === null) return { ok: false, error: '文件内容不是 JSON 对象' };
   const obj = raw as Record<string, unknown>;
 
@@ -312,17 +363,47 @@ export function checkBundle(raw: unknown, existingSessionIds: string[]): BundleC
   if (!Array.isArray(obj.messages)) return { ok: false, error: 'messages 必须是数组' };
   if (!Array.isArray(obj.snapshots)) return { ok: false, error: 'snapshots 必须是数组' };
 
+  const messages = obj.messages as Message[];
+  const snapshots = obj.snapshots as RequestSnapshot[];
+  const bundleWorldBooks = Array.isArray(obj.worldBooks) ? (obj.worldBooks as WorldBook[]) : undefined;
+  const bundleCharacter = obj.characterCard as CharacterCardLite | undefined;
+
+  const conflicts: BundleConflicts = {
+    sessionIds: intersect([session.id], existingSessionIds),
+    messageIds: intersect(
+      messages.map((m) => m.id),
+      existing?.messages,
+    ),
+    snapshotIds: intersect(
+      snapshots.map((s) => s.id),
+      existing?.snapshots,
+    ),
+    worldBookIds: intersect(
+      (bundleWorldBooks ?? []).map((wb) => wb.id),
+      existing?.worldBooks,
+    ),
+    characterIds: intersect(bundleCharacter ? [bundleCharacter.id] : [], existing?.characters),
+    total: 0,
+  };
+  conflicts.total =
+    conflicts.sessionIds.length +
+    conflicts.messageIds.length +
+    conflicts.snapshotIds.length +
+    conflicts.worldBookIds.length +
+    conflicts.characterIds.length;
+
   return {
     ok: true,
-    idConflict: existingSessionIds.includes(session.id),
+    idConflict: conflicts.total > 0,
+    conflicts,
     bundle: {
       format: SESSION_BUNDLE_FORMAT,
       formatVersion: SESSION_BUNDLE_VERSION,
       session,
-      messages: obj.messages as Message[],
-      snapshots: obj.snapshots as RequestSnapshot[],
-      characterCard: obj.characterCard as CharacterCardLite | undefined,
-      worldBooks: Array.isArray(obj.worldBooks) ? (obj.worldBooks as WorldBook[]) : undefined,
+      messages,
+      snapshots,
+      characterCard: bundleCharacter,
+      worldBooks: bundleWorldBooks,
     },
   };
 }
@@ -404,13 +485,37 @@ export function planImport(
   return { session, messages, snapshots, characterCard, worldBooks, idMap };
 }
 
-/** 落库：把 `planImport` 的结果写进 IndexedDB（同一次 Promise.all，无悬空引用） */
+/**
+ * 落库：把 `planImport` 的结果写进 IndexedDB（同一次 Promise.all，无悬空引用）。
+ *
+ * 🔴 `overwrite` = **替换**，不是"往上叠"：先按 `sessionId` 删掉本地旧的消息与快照，
+ *    再写新包。否则"用 2 条消息的包覆盖本地 8 条消息的会话"会变成 10 条混在一起 ——
+ *    那不叫覆盖。`copy` 模式会话 ID 全新，不需要清理。
+ */
 export async function persistImport(
   bundle: SessionBundle,
   mode: 'overwrite' | 'copy',
   existingTitles: string[],
 ): Promise<ImportResult> {
   const plan = planImport(bundle, mode, existingTitles);
+
+  if (mode === 'overwrite') {
+    const [oldMessages, oldSnapshots] = await Promise.all([
+      idbGetBySession<Message>('messages', plan.session.id),
+      idbGetBySession<RequestSnapshot>('snapshots', plan.session.id),
+    ]);
+    await Promise.all([
+      idbDeleteMany(
+        'messages',
+        oldMessages.map((m) => m.id),
+      ),
+      idbDeleteMany(
+        'snapshots',
+        oldSnapshots.map((s) => s.id),
+      ),
+    ]);
+  }
+
   await Promise.all([
     idbPut('sessions', plan.session),
     idbBulkPut('messages', plan.messages),
