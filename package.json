@@ -1,0 +1,27 @@
+{
+  "name": "problem4-tavern",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "做一个自己的 SillyTavern —— 本地优先的 RP 聊天前端（React 18 + TS + Vite）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
+    "serve:dist": "node scripts/static-proxy.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  }
+}
