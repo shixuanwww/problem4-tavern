@@ -45,7 +45,7 @@ LLM_API_KEY=你的key
 
 ### 🔴 安装期无网兜底 / 打开 `dist/` 的能力边界
 
-如果装不上依赖（无网 / 私源不可达），仓库里提交了构建产物 `dist/`（`.gitignore` 默认排除，交付时用 `git add -f dist/` 入库）。
+如果装不上依赖（无网 / 私源不可达），仓库里提交了构建产物 `dist/`（`.gitignore` 已显式放行 `!dist/**`，产物随源码一起在库里；改源码后需 `npm run build` 并重新提交，否则入库产物与源码脱节）。
 
 **静态打开 `dist/` 的边界必须说清：**
 
@@ -70,7 +70,7 @@ npm run serve:dist     # = node scripts/static-proxy.mjs，默认 http://localho
 npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 ```
 
-**不引入 `vitest`**：`src/core/` 是纯函数内核、不依赖 DOM，Node 内置 test runner 直接就能跑（依赖上限也要求如此）。当前 **77 个用例全绿**。
+**不引入 `vitest`**：`src/core/` 是纯函数内核、不依赖 DOM，Node 内置 test runner 直接就能跑（依赖上限也要求如此）。当前 **83 个用例全绿**。
 
 > 🔴 **等级 1 的四条"必须正确处理"有专门用例**（`tests/l1-behaviors.test.ts`，27 条）：
 > 重试不重复插入用户消息、生成中切会话结果仍归属发起会话、刷新打断必标 `interrupted`、
@@ -380,7 +380,7 @@ problem4-tavern/
 │  ├─ ui/                # 组件（仅渲染与交互，业务逻辑都在 core/）
 │  ├─ App.tsx, main.tsx, styles.css
 │  └─ ...
-├─ tests/                # 77 个用例（Node 内置 test runner；含 L1 四条硬要求的行为用例）
+├─ tests/                # 83 个用例（Node 内置 test runner；含 L1 四条硬要求的行为用例）
 ├─ samples/              # 可演示的样例数据
 ├─ docs/
 │  ├─ problem-statement.md     # 题面原文（key 已掩码）

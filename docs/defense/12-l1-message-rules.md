@@ -34,7 +34,7 @@ A：`planRetry()`（`core/messaging.ts:39`）把要丢弃的消息限定为"锚�
 断言**user 消息恒为 1 条、seq 为 `[1,2,3]`**。这不是"我读了代码觉得对"，是可复跑的断言。
 
 **Q：生成中切会话，为什么结果不会串到别的会话？**
-A：`message/append`（`state/actions.ts:126`）按 `message.id` 定位、只改 `content`；
+A：`message/append`（`state/actions.ts:145`）按 `message.id` 定位、只改 `content`；
 消息对象自带的 `sessionId`（在 `runGeneration` 里创建时就写死为发起请求的会话）从头到尾没被改过。
 `runGeneration` 还在闭包里深拷贝了 `settings` 与 `session`，所以"生成期间改设置"也只影响下一次请求。
 用例同时断言了 `activeSessionId` 仍是用户切过去的那一个（切会话不该把用户拽回来）。

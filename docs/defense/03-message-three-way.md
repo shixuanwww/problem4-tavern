@@ -37,7 +37,7 @@
 2. **语义污染** —— 检查视图里会冒出一堆"被排除的消息"，把真正的排除决策淹没。
 
 所以删除走**真删链**：`store.removeMessages(ids)` → `repo.deleteMessages(ids)` → `idbDeleteMany('messages', ids)`，
-**真的从库里抹掉**（`src/state/store.tsx:356` → `src/storage/repo.ts:117` → `src/storage/idb.ts:100`），
+**真的从库里抹掉**（`src/state/store.tsx:396` → `src/storage/repo.ts:127` → `src/storage/idb.ts:100`），
 并在 UI 上给**不可逆的二次确认**（`window.confirm`，文案写明"无法恢复"，
 且提示"如果只是不想让 AI 看到，请用「不进上下文」"）。
 
