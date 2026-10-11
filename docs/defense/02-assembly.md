@@ -12,7 +12,7 @@
 2. preset-system 预设中 position='system' 且 enabled 的模块，按 order 升序
 3. worldbook     世界书激活内容（拼成一个部分，每条一行）
 4. history       status==='complete' && excluded===false 的消息，按 seq 升序
-                 —— 再排除 seq === pendingSeq 的那一条
+                 —— 再排除 seq === pendingSeq 的那一条（入口处统一剔除，见 §2.3）
 5. pending       本次待发送的用户输入（全文只在这里出现一次）
 6. post-history  预设中 position='postHistory' 且 enabled 的模块
 ```
@@ -33,9 +33,16 @@
 ### 2.2 两个独立开关在装配里的地位（与模块 03 呼应）
 
 ```ts
-if (msg.excluded) continue;              // 不进上下文 ⇒ 装配阶段直接跳过
-if (msg.status !== 'complete') continue; // 未完成 ⇒ 不参与
-if (msg.seq === input.pendingSeq) continue; // 本次待发送的那条，交给 pending 部分
+// 入口先做两件归一化（整个装配共用这份消息集合）
+const ordered = [...new Map(messages.map((m) => [m.id, m])).values()].sort((a, b) => a.seq - b.seq);
+const contextMessages = ordered.filter((m) => m.seq !== input.pendingSeq);
+
+// history 部分
+for (const msg of contextMessages) {
+  if (msg.excluded) continue;              // 不进上下文 ⇒ 装配阶段直接跳过
+  if (msg.status !== 'complete') continue; // 未完成 ⇒ 不参与
+  push({ kind: 'history', ... });
+}
 ```
 
 **`uiHidden` 根本不出现** —— 这是刻意的：装配层不读这个字段，从代码结构上就没有"隐藏能改变上下文"的可能。
@@ -48,13 +55,25 @@ if (msg.seq === input.pendingSeq) continue; // 本次待发送的那条，交给
 把它从 history 里剔掉，只保留 pending 那一份。
 
 ```ts
-if (msg.seq === input.pendingSeq) continue;   // 这条就是 pendingUserText
+const contextMessages = ordered.filter((m) => m.seq !== input.pendingSeq);   // 这条就是 pendingUserText
 ```
 
-**测试**：`#16 待发送的 user 消息在 history 与 pending 中只出现一次`。
+**为什么在入口剔除、而不是只在 history 循环里 `continue`**：同一个 `pendingSeq` 也**必须**
+从世界书扫描集里剔除。否则"待发送消息"会占掉一格扫描窗口，导致
+**预览里激活的世界书条目在真正发送时激活不了**（`scanDepth=3` 时最明显）。
+另外调用方（`store.runGeneration`）可能把同一条消息既从 `state.messages`
+又从 `extraMessages` 传进来，所以入口还要**按 `message.id` 去重**。
+两件归一化合起来，保证预览与真实发送看到的是**同一份**消息集合。
 
-> 追问预判：为什么不用 `id` 排除？`seq` 是会话内单调递增序号，比 id 更适合表达"就是这一条"；
-> 而且 `seq` 同时被 worldbook 引擎用来做排序，一处定义两处受益。
+**测试**：`#16 待发送的 user 消息在 history 与 pending 中只出现一次`；
+`tests/fixes.test.ts` 的"预览与真实发送的世界书激活必须逐项一致"与"同 id 重复注入按 id 去重"。
+
+> 追问预判：**为什么"剔除待发送消息"用 `seq`、"去重"用 `id`？**
+> 两者表达的是不同的东西，不是二选一：
+> `seq === pendingSeq` 是在说"**这一条就是本次待发送的那条**"（语义位置），
+> 所以它必须同时也从扫描集里消失；而 `id` 去重是在说"**同一个对象被传了两遍**"（数量问题），
+> 只有 `id` 能判断。
+> 另：`seq` 同时被 worldbook 引擎用来做排序，一处定义两处受益。
 
 ### 2.4 为什么每个预设模块单独成一个 part（而不是拼成一个字符串）
 

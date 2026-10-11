@@ -71,7 +71,7 @@
 
 `tests/` 用 Node 内置 test runner（`node --experimental-strip-types --test tests/*.test.ts`），
 **不引入 `vitest`**（与 handoff §2.3 的依赖上限一致）。
-当前 **77 个用例全绿**：前 50 条覆盖 PLAN §8 的 18 条验收项（世界书五条规则、装配顺序、
+当前 **83 个用例全绿**：前 50 条覆盖 PLAN §8 的 18 条验收项（世界书五条规则、装配顺序、
 `uiHidden` / `excluded` / 删除的分离、快照冻结、V2 映射与错误处理、预设校验与模板展开等）。
 
 ## 6. 等级 1 的四条硬要求：判定抽成 `core/messaging.ts`（**覆盖口径的补强**）
@@ -89,3 +89,47 @@
   `worldBooks?: WorldBook[]`（**纯增量字段**，不改既有调用方行为）。
 - **为什么值得改**：这四条是题面里唯一被点名"必须正确处理"的行为，也是最可能被追问
   "你怎么保证"的地方。现在每条都有可复跑的断言（`docs/defense/12-l1-message-rules.md` 给了答辩口径）。
+
+---
+
+## 7. 代码审计修复轮（2026-10-11 晚）：把 6 处"实现与文档/题面不一致"修掉
+
+> 这一轮不是新增功能，是**审计发现的缺陷修复**。每条都写了"错在哪 / 怎么修 / 谁保证"。
+> 新增回归用例在 `tests/fixes.test.ts`（6 条），总数 77 → **83**。
+
+- **① 待发送消息挤掉世界书扫描窗口（最严重）**
+  - **错在哪**：用户消息"入库即 complete"（PLAN §11 的选择），`runGeneration` 又会把同一条消息
+    通过 `extraMessages` 再传一次。于是它既出现在"最近 N 条合格历史"里、又作为 pending 出现 ——
+    **同一份内容占掉两格扫描窗口**，还会把 `state.messages` 与 `extraMessages` 两份都算进去。
+    后果：`scanDepth=3` 时"最近 3 条"实际只扫到 2 条旧消息，**预览里激活的世界书条目，真正发送时不激活**，
+    而题面的"发送前预览 / 检查视图"正是靠这一致性立住的。
+  - **怎么修**：`buildRequest()` 入口做两件归一化 —— 按 `message.id` 去重；
+    把 `seq === pendingSeq` 的那条从扫描集与 `history` 里剔除（它只在 `pending` 部分出现一次）。
+    预览与真实发送因此共用同一份消息集合。
+  - **谁保证**：`tests/fixes.test.ts` 前两条（预览 vs 发送的激活结果与 parts 序列必须逐项相同）。
+- **② 覆盖导入 ≠ 替换**：`repo.persistImport` 只 `put` 不删旧记录，覆盖一个 8 条消息的会话会变成
+  "2 条新的 + 6 条旧的"。现在 overwrite 会先按 `sessionId` 清掉本地 messages / snapshots；
+  内存层新增 `session/replace` 动作（原先只有 upsert，没有"整体替换"的表达能力）。
+- **③ 随包导入的世界书没进内存**：`persistImport` 早已把它们写库并返回，但 `applyImport` 忘了 dispatch
+  `worldbook/upsert` ⇒ 会话引用了它们却暂时不生效、刷新后才出现。已补。
+- **④ 导入冲突只看会话 ID**：题面原话是"与已有资源同 ID"。`checkBundle` 现在把
+  会话 / 消息 / 快照 / 世界书 / 角色卡五类都算出来（新增可选第三参 `existing`，旧签名行为不变），
+  UI 的冲突弹窗逐项列出命中的资源。
+- **⑤ 首次启动缺角色卡**：`ensureDefaultCharacter()` 只写库、返回值被丢弃，`newSession` 也不补
+  `character/upsert` ⇒ 全新浏览器第一次演示时装配**找不到角色卡**（预览里没有角色卡部分）。
+  现在 `createSession` 返回实际绑定的 `character`，启动时也把它并进 `db.characters`。
+- **⑥ 生成期间的写入会覆盖用户操作**：流式节流写与收尾写都用闭包里那份旧 `assistant` 对象，
+  会把用户在生成期间改的 `uiHidden` / `excluded` 打回原值；删会话后的收尾写还会把刚级联删掉的
+  消息重新写回库里（孤儿记录）。现在写库前用"内存里最新的那条"做基底、只覆盖 `content` / `status`，
+  并用 `removedSessions` 标记跳过已删会话的收尾写。
+- **顺带修掉的不一致（小项）**：
+  - 检查视图"命中消息"链接原先指向 `#msg-<id>`，但气泡上只有 `data-message-id` —— 点了没反应。已给气泡加 `id`。
+  - README 曾宣称 80% 提醒"以冻结快照为准"，实际 UI 用的是实时装配值；`isOverWarnThreshold()` 一直是死代码。
+    现在统一为：**提醒条按实时装配值精确比较**，快照负责"发之后复核"，README 已改写为事实。
+  - 提醒条的"入口"原先只是把列表滚到顶部；现在会**把最近 2 条之外的消息整批选中**并显示隐藏消息，
+    点一下工具栏的「批量不进上下文」就能一步排除。
+  - `AppSettings.lastActiveSessionId`：`hydrate` 的 `preferredActiveId` 一直是死分支（store 从不传），
+    刷新后并不恢复"上次打开的会话"。现在切换会话时落库，启动时用它做偏好。
+  - 角色卡"被忽略的运行规则"原先只扫 `entry.extensions`，而 V2 的 `position` / `selective` /
+    `secondary_keys` / `case_sensitive` 按规范是**条目顶层字段**（ST 导出才镜像进 extensions）⇒
+    现在两处都看，手写卡也能如实列出。

@@ -112,9 +112,19 @@ UI 在聊天区顶部渲染 `.error-banner`（`role="alert"`），并给一个**
 **Q1：`sendMessage` 里为什么把 `userMessage` 又塞进 `runGeneration` 的 `extraMessages`？**
 因为 `dispatch` 之后 React 的重渲染是异步的，`stateRef.current` 可能还没包含这条新消息
 （`runGeneration` 紧跟着同步读 `stateRef.current`）。
-`extraMessages` 保证装配时一定能看到它；而装配本身按 `seq === pendingSeq` 排除重复，
-所以**即使它同时出现在 `snap.messages` 里也不会重复出现**（测试 `#16` 覆盖了这一点）。
+`extraMessages` 保证装配时一定能看到它。
+⚠️ **代价与对策（很重要）**：重渲染若已提交，同一条消息就会出现**两份**。所以
+`buildRequest()` 的入口做两件归一化 —— ① 按 `message.id` 去重；② 把 `seq === pendingSeq`
+那条从 `history` **与世界书扫描集**里一起剔除（只在 `pending` 部分留一份）。
+只做 ① 不够：单单"不重复装配"并不能阻止它**占掉两格世界书扫描窗口**，
+那会让"预览里激活的条目，真正发送时不激活"（`tests/fixes.test.ts` 有专门断言）。
 `retryLast` 传的是 `[]`，因为被重试的 user 消息早就在库里了。
+
+**Q1b：生成期间对这条 assistant 消息做的隐藏/排除，会被收尾写覆盖吗？**
+不会（已修）。流式节流写与收尾写都用**内存里最新的那条**做基底、只覆盖 `content` / `status`，
+所以用户在生成期间改的 `uiHidden` / `excluded` 不会被写回原值。
+另外"生成期间删掉整个会话"会被 `removedSessions` 标记拦住 —— 收尾不再把消息写回库里
+（否则级联删除之后会留下一条谁也引用不到的孤儿消息）。
 
 **Q2：为什么用 `useReducer` + `Context` 而不用 Redux / Zustand？**
 状态树不复杂（7 类资源 + 几个 UI 标志），reducer 是纯函数、可单测、可预测；

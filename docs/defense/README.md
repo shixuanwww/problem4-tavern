@@ -19,7 +19,7 @@
 | 08 | [存储层 IndexedDB](08-storage-idb.md) | `storage/idb.ts` + `storage/repo.ts` | 自写薄封装，写操作等事务完成 |
 | 09 | [状态与流式生成](09-state-streaming.md) | `state/actions.ts` + `state/store.tsx` | 生成中切会话、配置快照、中断修复 |
 | 10 | [/llm 代理与 CORS](10-llm-proxy-cors.md) | `vite.config.ts` + `scripts/static-proxy.mjs` | 浏览器不直连第三方 API |
-| 11 | [token 估算与 80% 提醒](11-tokens-usage.md) | `core/tokens.ts` + `ui/UsageBar.tsx` | 估算是估算，判定以快照为准 |
+| 11 | [token 估算与 80% 提醒](11-tokens-usage.md) | `core/tokens.ts` + `ui/UsageBar.tsx` | 提醒条按实时装配值精确比较；快照负责事后复核 |
 | 12 | [等级 1 的四条硬要求](12-l1-message-rules.md) | `core/messaging.ts` + `store.tsx` + `repo.ts` | 重试不重插 / 切会话不串 / 刷新必标中断：判定抽成纯函数才测得了 |
 
 ## 开场先讲的四句话（30 秒版）

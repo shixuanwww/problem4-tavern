@@ -19,7 +19,7 @@
 ### 2.1 六步流水线（与题面规则一一对应）
 
 ```
-步骤 1  构造扫描集   eligible = 消息里 !excluded && status==='complete' 的
+步骤 1  构造扫描集   eligible = 消息里 !excluded && status==='complete' 且 **不是** seq===pendingSeq 那条
                      scanSet  = 最近 N 条 eligible  +  {pending 待发送输入}
 步骤 2  逐条判定候选  禁用→skip('disabled') / 常驻→候选 / 无关键词→skip / 命中→候选 / 未命中→skip
 步骤 3  去重         同一条目最多一次（按 entry.id），被丢弃者记 skipped('duplicate_id')
@@ -54,6 +54,13 @@ for (const msg of scanSet) {            // 单条消息为边界
   与题面"扫描深度是 3，就检查最近 3 条符合条件的消息"的例子直接冲突。
 
 **测试**：`#1 扫描深度 3，关键词只在第 4 条旧消息里 → 不激活`；`pending 关键词也能命中`。
+
+> 🔴 **一个容易自己踩到的坑（已修）**：正常发送时"本次待发送的 user 消息"**已经入库**
+> （`seq === pendingSeq`）。如果它既进 `eligible`、又作为 pending 进扫描集，就会**占掉两格扫描窗口** ——
+> `scanDepth=3` 实际只扫到 2 条旧消息，于是"**预览里激活的条目，真正发送时不激活**"。
+> 所以 `buildRequest()` 入口先按 `message.id` 去重、再把 `seq === pendingSeq` 那条从扫描集里剔除
+> （见模块 02 §2.3）。另一个入口 `activateWorldBook()` 本身不做这件事 —— 它是纯函数，
+> 调用方必须传"已经排除掉 pending 的"消息集合。
 
 ### 2.4 为什么排序要加"同级按 ASCII 升序"
 

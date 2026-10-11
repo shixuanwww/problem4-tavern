@@ -136,6 +136,13 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 
 **扫描集**：`scanDepth = N` 表示**最近 N 条合格历史**（`excluded === false && status === 'complete'`）**另加**本次待发送消息 ⇒ 一共 `N+1` 条参与匹配。被 `scanDepth` 截断在外的合格历史，逐条产出 `skipped{ reason: 'out_of_scan_depth', source: 'message' }`。
 
+> 🔴 **扫描集里"本次待发送的那条 user 消息"只算 pending 那一份**：正常发送时用户消息已经入库
+> （`seq === pendingSeq`），如果照收进"最近 N 条合格历史"，它就会挤掉一格窗口 ——
+> 结果是**预览里激活的条目在真正发送时激活不了**。所以 `buildRequest()` 入口做两件归一化：
+> ① 按 `message.id` 去重（`runGeneration` 会把同一条消息从 `state.messages` 与 `extraMessages` 各传一份）；
+> ② 把 `seq === pendingSeq` 的那条从扫描集与 `history` 里剔除，它只在 `pending` 部分出现一次。
+> 预览与真实发送因此看到的是**同一份**消息集合。
+
 > ⚠️ 我们**不采用**"pending 计入 N 之内"的读法 —— 那会让"最近 N 条"实际只扫到 N−1 条历史，与题面例子（"扫描深度 3，关键词只在第 4 条旧消息里 ⇒ 不激活"）对不上。
 
 **每一处"没发"都要有原因**：`skipped` 表用判别字段 `source: 'entry' | 'message'` 区分"条目级未发送"与"消息级未发送"，靠 `reason` 细分（`disabled` / `no_keyword_match` / `empty_content` / `budget_exceeded` / `out_of_scan_depth` / `message_excluded` / `message_incomplete` / `duplicate_id`）。检查视图里逐条列出、可点击跳到该条目。
@@ -167,7 +174,10 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 
 **为什么**：题面要求"保存发送后的请求快照"并能查看。如果快照是"引用当前状态再实时计算"，那它就不是快照、而是又一次预览 —— 改一条历史消息就会让"当时到底发了什么"这个事实消失。
 
-> 🔴 **阈值判定也以快照为准**：`contextWarnPct`（默认 80%）的判据是 `RequestSnapshot.totalTokens / contextLimit`，**不是**预览里实时算出来的百分比。流式生成期间改输入框或改设置，**不得**重算本次快照。预览时显示的百分比**仅供参考**。
+> 🔴 **快照冻结之后只读**：流式生成期间改输入框、改消息、改设置，**不得**重算或改写本次快照 ——
+> 快照里记的是"那一刻到底发了什么"（含 `totalTokens` / `contextLimit` / `scanDepth`）。
+> 上下文提醒条则按**当前待发送内容**实时计算（题面口径是"待发送内容达到 80% 时提示"），
+> 二者用途不同：提醒条负责"发之前拦一下"，快照负责"发之后能复核"。
 
 ---
 
@@ -248,7 +258,7 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 | 世界书扫描深度 `scanDepth` | **4**（范围 1–100） | `N` = 最近 N 条合格历史 **+ 本次待发送**（共 N+1 条）。`0` / 负数 = 非法 ⇒ **钳制为 1**；`> 100` ⇒ 100 |
 | 上下文上限 `contextLimit` | **32768** | 可配置 |
 | 世界书预算 `worldBookBudgetPct` | **25** | **本项目自定**（见 §2.4）；调 100 = 关闭 |
-| 提醒阈值 `contextWarnPct` | **80** | 题面示例值；**以发送瞬间的快照为准**（见 §2.5） |
+| 提醒阈值 `contextWarnPct` | **80** | 题面示例值；判据是**实时装配结果** `totalTokens / contextLimit`，用精确比较（不做四舍五入），见 §8 |
 | 关键词匹配 | **大小写不敏感**子串包含 | `key` 先 `trim()`；空 key 无效跳过；**不做正则 / 分词 / 整词匹配** |
 | 排序 / 去重 | `priority` 降序，同级 `id` **ASCII 升序**；按 `entry.id` 去重 | 见 §2.3 |
 | 世界书插入位置 | 拼成一个 `worldbook` 部分，插在**系统提示之后、历史之前**，每条一行 | 自定 |
@@ -256,7 +266,7 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 | 用户消息落库时机 | 入库即 `status='complete'` 并分配 `seq` | 装配时按 `seq === pendingSeq` 排除同一条 |
 | 流式写库节流 | **≥ 500ms 或累计 200 字符**写一次 | 刷新后据此恢复或标记 `interrupted` |
 | 导出格式 | 单个 `.json`：`{ format, formatVersion, session, messages, snapshots, characterCard?, worldBooks? }` | 文件名带会话标题与时间 |
-| 导入同 ID 冲突 | **必须三选一：覆盖 / 创建副本 / 取消** | 副本 = **分配新 ID，绝不复用原 ID**，标题加 `（副本 2）`；固定三步：先建副本资源 → 一张 `idMap` 一次性重写所有引用 → 最后替换原资源 |
+| 导入同 ID 冲突 | **必须三选一：覆盖 / 创建副本 / 取消** | 冲突检测覆盖 **会话 / 消息 / 快照 / 世界书 / 角色卡** 五类资源（题面说的是"与已有资源同 ID"，只看会话 ID 会漏）；副本 = **分配新 ID，绝不复用原 ID**，标题加 `（副本 2）`；固定三步：先建副本资源 → 一张 `idMap` 一次性重写所有引用 → 最后替换原资源；**覆盖 = 整体替换**（先清掉本地同会话的旧消息与旧快照，避免新旧混在一起） |
 | 删除级联 | 删会话 → 级联删其 `messages` / `snapshots` | 删预设 → 已导入会话保留快照出的模块副本；删世界书 → 从各会话引用中移除，不留悬空 |
 | 同名 | 允许重名，靠 ID 区分 | |
 
@@ -313,10 +323,11 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
 - **估算方式**：CJK 字符按 1 token、其他字符按每 4 字符 1 token **粗估**（`ceil(cjk + other/4)`）。
   🔴 **这是估算，不是任何模型的真实分词器** —— 只用于给出量级感与触发提醒，不保证与模型账单一致。
 - **世界书预算**：`floor(contextLimit × worldBookBudgetPct / 100)`（见 §2.4）。
-- **提醒判定**：装配后 `totalTokens / contextLimit >= contextWarnPct / 100` ⇒ 显示提醒条。
-  提醒条**带"可处理的消息入口"**（点击打开批量面板，可批量 `excluded` 旧消息），
-  且在**发送前预览**区域同样出现。
-- 🔴 **判定以发送瞬间冻结的快照为准**（见 §2.5），预览时显示的百分比仅供参考。
+- **提醒判定**：当前装配结果 `totalTokens / contextLimit >= contextWarnPct / 100` ⇒ 显示提醒条
+  （精确比较，走 `core/tokens.ts#isOverWarnThreshold`，不做四舍五入：79.5% 不会被显示成 80%）。
+  提醒条**带"可处理的消息入口"**：点「选中较早的消息」会把最近 2 条之外的消息整批选中
+  （并自动打开"显示已隐藏消息"，避免选中看不见的东西），接着点工具栏的「批量不进上下文」即可一步排除。
+- 快照里同样记着当时的 `totalTokens` / `contextLimit`，可在「检查视图」里复核；两者口径不同、用途不同（见 §2.5）。
 
 ---
 
@@ -329,12 +340,14 @@ npm test          # = node --experimental-strip-types --test "tests/*.test.ts"
    发一条消息 → 回复**逐段流式增长**。
    > 验证流式真的在流：DevTools → Network → `/llm` 的响应是**多个 chunk 增量到达**、聊天气泡**一段段长**，
    > 而不是等整段返回后一次性出现。
-2. **刷新**：按 F5 → 会话 / 消息 / 状态都还在（IndexedDB）。
+2. **刷新**：按 F5 → 会话 / 消息 / 状态都还在（IndexedDB），并且**停留在你刚才那个会话上**
+   （`settings.lastActiveSessionId` 记着上次打开的会话；它已被删掉时回落到最近更新的会话）。
 3. **消息控制**：隐藏一条（界面变化，但**"发送前预览"里它仍在**）→ 再"不进上下文"另一条（预览里**消失**）
    → 指出两种标记**视觉可区分**。
 4. **世界书**：新建条目（关键词命中 → 自动激活）→ 加一条**常驻** → 把一条**禁用** →
    打开「检查视图」，指出：**哪条命中、哪个关键词、哪条消息触发**，以及**哪条为什么没发送**。
-5. **上下文提醒**：把 `contextLimit` 调小（如 1000）→ 提醒条出现 → 点消息入口批量排除旧消息。
+5. **上下文提醒**：把 `contextLimit` 调小（如 1000）→ 提醒条出现 → 点「选中较早的消息」
+   → 较早的消息被整批选中 → 点工具栏「批量不进上下文」（预览里它们立刻消失，正文仍在）。
 6. **tavern-panel**：发一条含示例标签的消息（可直接从 `samples/sample-message-with-panels.md` 复制）
    → 看到正文 + 状态栏 + 按钮 → **点按钮 → 文字进输入框（不自动发）**。
 7. **错误兜底**：故意贴一个坏 JSON 的标签 → **显示原文 + 具体问题**（不丢内容）。

@@ -525,9 +525,14 @@ activateWorldBook(input: {
 
 - **token 估算**（不引入 tokenizer 依赖）：`estimate(text) = ceil(cjkChars * 1 + otherChars / 4)`，即中日韩字符按 1 token、其他字符按 4 字符 1 token 粗估。函数集中在 `src/core/tokens.ts`，README 声明这是**估算**。
 - **世界书预算** `budgetTokens = floor(contextLimit * worldBookBudgetPct / 100)`。
-- **提醒**：装配后若 `totalTokens / contextLimit >= contextWarnPct/100`，在输入框上方显示提示条（`contextWarnPct` 默认值 **80**，见 §11；判据恒为整数百分比，**不存在 `0.8` 这种小数口径**）：
+- **提醒**：装配后若 `totalTokens / contextLimit >= contextWarnPct/100`，在输入框上方显示提示条（`contextWarnPct` 默认值 **80**，见 §11）：
+  - 🔴 **2026-10-11 审计修订**：判据改为**精确比较**（`core/tokens.ts#isOverWarnThreshold`），
+    不再先用 `Math.round` —— 否则 `79.5%` 会被显示成 `80%` 而提前告警。
+    显示用的整数百分比与判据是两个数（见 `docs/notes-plan-conflicts.md` §7）。
   - 文案参考："上下文快满了（已用 X / Y，Z%）"
-  - **必须包含"可处理的消息入口"**：点击后打开消息批量面板（可筛选/批量排除较早消息）。
+  - **必须包含"可处理的消息入口"**：点击后**把最近 2 条之外的较早消息整批选中**（并显示隐藏消息），
+    用户接着点工具栏的「批量不进上下文」即可（🔴 2026-10-11 审计修订：原写法只说"打开批量面板"，
+    实现里实际只是滚到顶部，够不上"入口"）。
 - 提醒条在**发送前预览**区域也出现。
 - 🔴 **以哪一次计算为准**：预览时的 80% 只是**预估值**；**发送瞬间冻结的那份快照为准**（`RequestSnapshot.totalTokens`）。发送后若用量变化，提醒条按最新一次快照重算。这句话必须写进 README。
 
@@ -912,8 +917,8 @@ README 必须包含：
 | 提醒阈值 | 题面示例 80% | **80%**（可配置）；🔴 以**发送瞬间冻结的快照**为准（`RequestSnapshot.totalTokens`），预览时显示的百分比**仅供参考**、不作为判定依据；发送后按最新一次快照重算（写进 README） |
 | 用户消息 `status` / `seq` 时机 | 未规定 | **入库即 `status='complete'` 并在入库时分配 `seq`**；装配时按 **`seq === pendingSeq`** 排除同一条（**不再保留"发送前不落库"备选**）；如确需改动，必须同步修改 §4.3 签名与 §8 用例 16，**不得两套并存** |
 | 世界书超预算的处理顺序 | 未规定 | 按 `priority` 降序依次处理、**先处理的先占预算**（这正是"处理顺序"有意义的原因）；`priority` 相同时**按 ASCII ID 升序** —— 排序决定"谁先占预算" |
-| 阈值类按"当前值"还是"快照"判定 | 未规定 | 🔴 **一律以发送瞬间冻结的快照为准**：`contextWarnPct` 的判据是 `RequestSnapshot.totalTokens / contextLimit`；流式期间改输入框或改设置**不得**重算本次快照（§4.5 / §4.6） |
-| 上下文用量提醒的判定式 | 未规定 | 装配后 `totalTokens / contextLimit >= contextWarnPct / 100` 即显示提醒条；提醒条**必须带"可处理的消息入口"**（点击打开批量面板），且在**发送前预览**区域同样出现（§4.5） |
+| 阈值类按"当前值"还是"快照"判定 | 未规定 | 🔴 **快照一旦冻结就只读**：流式期间改输入框/改消息/改设置**不得**重算或改写本次 `RequestSnapshot`。**提醒条本身按实时装配值判定**（题面原话是"待发送内容达到 80%"，它必须随输入变化），快照负责"发之后能复核当时发了什么" —— 🔴 2026-10-11 审计修订，原写法"一律以快照为准"与实现不符（`docs/notes-plan-conflicts.md` §7） |
+| 上下文用量提醒的判定式 | 未规定 | 装配后 `totalTokens / contextLimit >= contextWarnPct / 100` 即显示提醒条（**精确比较**，见 §4.5）；提醒条**必须带"可处理的消息入口"**：点击即整批选中较早的消息（最近 2 条除外）并显示隐藏消息，随后一键「批量不进上下文」。位置在**输入框上方**（不在"发送前预览"面板里）—— 🔴 2026-10-11 审计修订 |
 | 预设的 `contextConfig` 四项 | 未规定 | 字段为 `contextLimit` / `scanDepth` / `worldBookBudgetPct` / `contextWarnPct`（示例值 32768 / 4 / 25 / 80）；**仅作会话初值**，之后以会话设置为准（§4.9） |
 | 扫描集"符合条件"的含义 | 未规定 | `excluded === false && status === 'complete'`（`uiHidden` 不影响扫描集与装配） |
 | 无关键词的非常驻条目 | 未规定 | **不参与**（视为永远未命中） |
