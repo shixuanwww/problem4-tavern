@@ -402,8 +402,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ------------------------------------------------------------ 资源
 
   const saveWorldBook = useCallback(async (worldBook: WorldBook) => {
-    await repo.saveWorldBook(worldBook);
+    // 先 dispatch 再落盘：受控输入框必须立刻拿到新 value，否则 IME 组合输入
+    // （中文拼音）会在等待 IndexedDB 写入期间被旧 value 打断，字母漏进文本框。
     dispatch({ type: 'worldbook/upsert', worldBooks: [{ ...worldBook, updatedAt: Date.now() }] });
+    try {
+      await repo.saveWorldBook(worldBook);
+    } catch (error) {
+      console.error('世界书落盘失败（界面已更新）', error);
+    }
   }, []);
 
   const removeWorldBook = useCallback(async (worldBookId: string) => {
@@ -420,8 +426,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const savePreset = useCallback(async (preset: Preset) => {
-    await repo.savePreset(preset);
+    // 同 saveWorldBook：先 dispatch 再落盘，避免 IME 组合输入被打断。
     dispatch({ type: 'preset/upsert', presets: [preset] });
+    try {
+      await repo.savePreset(preset);
+    } catch (error) {
+      console.error('预设落盘失败（界面已更新）', error);
+    }
   }, []);
 
   const removePreset = useCallback(async (id: string) => {
