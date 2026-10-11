@@ -1,0 +1,296 @@
+{
+  "format": "tavern-lite-session",
+  "formatVersion": "1.0",
+  "session": {
+    "id": "sample-session-1",
+    "title": "样例会话 · 柳洞寺的夜",
+    "createdAt": 1791000000000,
+    "updatedAt": 1791000600000,
+    "characterCardId": "char-sample-saber",
+    "worldBookIds": ["wb-fate-sample"],
+    "settings": {
+      "scanDepth": 4,
+      "contextLimit": 32768,
+      "worldBookBudgetPct": 25,
+      "contextWarnPct": 80,
+      "stream": true
+    },
+    "variables": {
+      "location": "柳洞寺·山门",
+      "hp": "10"
+    }
+  },
+  "messages": [
+    {
+      "id": "msg-1",
+      "sessionId": "sample-session-1",
+      "role": "assistant",
+      "content": "*她站在柳洞寺的山门前，盔甲上还挂着夜露。*\n\n「报上名来。」她把剑横在身前，「若是来谈条件的，说清楚条件；若是来打的，我也不躲。」",
+      "createdAt": 1791000000000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 1
+    },
+    {
+      "id": "msg-2",
+      "sessionId": "sample-session-1",
+      "role": "user",
+      "content": "「我是来谈条件的。柳洞寺底下埋着的东西，你应该已经察觉到了吧？」",
+      "createdAt": 1791000060000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 2
+    },
+    {
+      "id": "msg-3",
+      "sessionId": "sample-session-1",
+      "role": "assistant",
+      "content": "*她没有立刻回答，只是抬眼看了看寺庙的方向。*\n\n「圣杯。还有它下面那团东西。」她把剑尖压低了一点，「你要谈的，是把它取出来，还是把它封回去？」",
+      "createdAt": 1791000120000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 3,
+      "requestId": "snap-1"
+    },
+    {
+      "id": "msg-4",
+      "sessionId": "sample-session-1",
+      "role": "user",
+      "content": "「封回去。」我把手按在山门上，「但先说清楚代价。」\n\n<tavern-panel type=\"status\">\n{\"hp\":10,\"令咒\":3,\"location\":\"柳洞寺·山门\"}\n</tavern-panel>\n\n<tavern-panel type=\"choices\">\n{\"options\":[{\"label\":\"发动令咒\",\"text\":\"saber自裁吧\"},{\"label\":\"先说明代价\",\"text\":\"把代价说清楚，再决定要不要动手。\"}]}\n</tavern-panel>",
+      "createdAt": 1791000180000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 4
+    },
+    {
+      "id": "msg-5",
+      "sessionId": "sample-session-1",
+      "role": "assistant",
+      "content": "*她沉默了两秒，像是在把一件事从头到尾算一遍。*\n\n「代价是：我会先把你的令咒用光。」\n\n<tavern-panel type=\"status\">\n{\"hp\":72,\"令咒\":2,\"location\":\"柳洞寺·山门\",\"装扮\":\"深蓝斗篷（破了一道口子）\"}\n</tavern-panel>\n\n<tavern-panel type=\"choices\">\n{\"options\":[{\"label\":\"推门进去\",\"text\":\"我推开寺门，走进去。\"},{\"label\":\"先在门外观察\",\"text\":\"我贴着门缝往里看。\"}]}\n</tavern-panel>",
+      "createdAt": 1791000240000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 5
+    },
+    {
+      "id": "msg-6",
+      "sessionId": "sample-session-1",
+      "role": "user",
+      "content": "这条消息演示【界面隐藏】：它被 uiHidden=true 折叠起来，但 preview / 检查视图里仍然出现，因为隐藏不改变发给 AI 的内容。",
+      "createdAt": 1791000300000,
+      "status": "complete",
+      "uiHidden": true,
+      "excluded": false,
+      "seq": 6
+    },
+    {
+      "id": "msg-7",
+      "sessionId": "sample-session-1",
+      "role": "assistant",
+      "content": "这条消息演示【不进上下文】：它仍在列表里正常显示（左侧有标记「未发送给 AI」），但 excluded=true，装配时会消失。",
+      "createdAt": 1791000360000,
+      "status": "complete",
+      "uiHidden": false,
+      "excluded": true,
+      "seq": 7
+    },
+    {
+      "id": "msg-8",
+      "sessionId": "sample-session-1",
+      "role": "assistant",
+      "content": "这条演示【未完成】：status=interrupted（比如生成时刷新页面），它不会进入后续上下文，也进不了世界书扫描集。",
+      "createdAt": 1791000420000,
+      "status": "interrupted",
+      "uiHidden": false,
+      "excluded": false,
+      "seq": 8
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "snap-1",
+      "sessionId": "sample-session-1",
+      "createdAt": 1791000180000,
+      "model": "gemini-3.8-flash",
+      "totalTokens": 402,
+      "contextLimit": 32768,
+      "scanDepth": 4,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "character",
+          "sourceId": "char-sample-saber",
+          "label": "角色卡「Saber」",
+          "content": "Saber\n亚瑟王，不列颠的骑士之王。说话直率、重承诺，习惯用「吾」自称。",
+          "tokens": 41,
+          "role": "system"
+        },
+        {
+          "index": 1,
+          "kind": "worldbook",
+          "label": "世界书激活内容（世界书「Fate 世界观」/ 条目「圣杯」、世界书「Fate 世界观」/ 条目「从者规则（常驻）」）",
+          "content": "圣杯：由御三家共同设置的许愿装置，实为被污染的「此世全部之恶」。\n从者：由圣杯召唤的英灵分身，必须依赖御主的魔力存续。",
+          "tokens": 68
+        },
+        {
+          "index": 2,
+          "kind": "history",
+          "sourceId": "msg-1",
+          "label": "历史 #1 · assistant",
+          "content": "「报上名来。」她把剑横在身前。",
+          "tokens": 22,
+          "role": "assistant"
+        },
+        {
+          "index": 3,
+          "kind": "history",
+          "sourceId": "msg-2",
+          "label": "历史 #2 · user",
+          "content": "「我是来谈条件的。柳洞寺底下埋着的东西，你应该已经察觉到了吧？」",
+          "tokens": 34,
+          "role": "user"
+        },
+        {
+          "index": 4,
+          "kind": "history",
+          "sourceId": "msg-3",
+          "label": "历史 #3 · assistant",
+          "content": "「圣杯。还有它下面那团东西。」",
+          "tokens": 18,
+          "role": "assistant"
+        },
+        {
+          "index": 5,
+          "kind": "pending",
+          "label": "本次待发送（user）",
+          "content": "「封回去。」我把手按在山门上，「但先说清楚代价。」",
+          "tokens": 26,
+          "role": "user"
+        }
+      ],
+      "activations": [
+        {
+          "entryId": "grail",
+          "entryName": "圣杯",
+          "reason": "keyword",
+          "matchedKey": "圣杯",
+          "matchedMessageId": "msg-2"
+        },
+        {
+          "entryId": "servant-rules",
+          "entryName": "从者规则（常驻）",
+          "reason": "constant"
+        }
+      ],
+      "skipped": [
+        {
+          "entryId": "command-seal",
+          "entryName": "令咒",
+          "reason": "no_keyword_match",
+          "source": "entry"
+        },
+        {
+          "entryId": "ryudouji",
+          "entryName": "柳洞寺",
+          "reason": "no_keyword_match",
+          "source": "entry"
+        },
+        {
+          "entryId": "disabled-entry",
+          "entryName": "被禁用的条目",
+          "reason": "disabled",
+          "source": "entry"
+        },
+        {
+          "entryId": "msg-7",
+          "entryName": "消息 #7",
+          "reason": "message_excluded",
+          "source": "message"
+        },
+        {
+          "entryId": "msg-8",
+          "entryName": "消息 #8",
+          "reason": "message_incomplete",
+          "source": "message"
+        }
+      ]
+    }
+  ],
+  "characterCard": {
+    "id": "char-sample-saber",
+    "name": "Saber",
+    "description": "亚瑟王，不列颠的骑士之王。说话直率、重承诺，习惯用「吾」自称。",
+    "firstMes": "*她站在柳洞寺的山门前，盔甲上还挂着夜露。*\n\n「报上名来。」她把剑横在身前，「若是来谈条件的，说清楚条件；若是来打的，我也不躲。」",
+    "specVersion": "2.0",
+    "raw": {
+      "spec": "chara_card_v2",
+      "spec_version": "2.0",
+      "data": {
+        "name": "Saber",
+        "description": "亚瑟王，不列颠的骑士之王。说话直率、重承诺，习惯用「吾」自称。",
+        "first_mes": "*她站在柳洞寺的山门前，盔甲上还挂着夜露。*\n\n「报上名来。」她把剑横在身前，「若是来谈条件的，说清楚条件；若是来打的，我也不躲。」",
+        "personality": "忠诚、固执（不支持的字段，导出时保留）"
+      }
+    }
+  },
+  "worldBooks": [
+    {
+      "id": "wb-fate-sample",
+      "name": "Fate 世界观",
+      "createdAt": 1791000000000,
+      "updatedAt": 1791000000000,
+      "entries": [
+        {
+          "id": "grail",
+          "name": "圣杯",
+          "keys": ["圣杯", "许愿机"],
+          "content": "圣杯：由御三家共同设置的许愿装置，实为被污染的「此世全部之恶」。它可以实现愿望，但方式一定扭曲。",
+          "enabled": true,
+          "constant": false,
+          "priority": 100
+        },
+        {
+          "id": "command-seal",
+          "name": "令咒",
+          "keys": ["令咒", "咒印"],
+          "content": "令咒：御主手上的三划咒印，每划可对从者下达一次绝对命令，用掉不再恢复。",
+          "enabled": true,
+          "constant": false,
+          "priority": 90
+        },
+        {
+          "id": "ryudouji",
+          "name": "柳洞寺",
+          "keys": ["柳洞寺"],
+          "content": "柳洞寺：坐落在圆藏山半山腰的寺庙，是本次圣杯战争中一块受到特别保护的灵地。",
+          "enabled": true,
+          "constant": false,
+          "priority": 80
+        },
+        {
+          "id": "servant-rules",
+          "name": "从者规则（常驻）",
+          "keys": [],
+          "content": "从者：由圣杯召唤的英灵分身，必须依赖御主的魔力存续；失去御主会逐渐崩解。",
+          "enabled": true,
+          "constant": true,
+          "priority": 10
+        },
+        {
+          "id": "disabled-entry",
+          "name": "被禁用的条目",
+          "keys": ["间桐"],
+          "content": "启用状态为 false 的条目：本题规则 3 规定「禁用条目始终排除」，永远不进候选。",
+          "enabled": false,
+          "constant": false,
+          "priority": 70
+        }
+      ]
+    }
+  ]
+}
