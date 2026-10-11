@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.19 || >=22.12"
+  },
   "description": "做一个自己的 SillyTavern —— 本地优先的 RP 聊天前端（React 18 + TS + Vite）",
   "scripts": {
     "dev": "vite",
